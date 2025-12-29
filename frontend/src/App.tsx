@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import PlayerSetup from './components/PlayerSetup'
 import GameLobby from './components/GameLobby'
 import GameRoom from './components/GameRoom'

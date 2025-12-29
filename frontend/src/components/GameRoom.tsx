@@ -58,7 +58,7 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     // 连接WebSocket - 自动适配生产环境和开发环境
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.hostname
-    const port = process.env.NODE_ENV === 'production' ? window.location.port : '8000'
+    const port = import.meta.env.PROD ? window.location.port : '8000'
     const wsUrl = `${protocol}//${host}${port ? ':' + port : ''}/ws/${roomId}/${playerProfile.username}`
     const websocket = new WebSocket(wsUrl)
 
