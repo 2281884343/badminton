@@ -16,6 +16,8 @@ interface GameState {
   score_b: number
   last_shot_quality: string | null
   last_shot_value: number | null
+  is_first_shot?: boolean
+  rally_count?: number
 }
 
 interface LogEntry {
@@ -45,7 +47,9 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     score_a: 0,
     score_b: 0,
     last_shot_quality: null,
-    last_shot_value: null
+    last_shot_value: null,
+    is_first_shot: true,
+    rally_count: 0
   })
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [selectedSkill, setSelectedSkill] = useState(SKILLS[0])
@@ -115,6 +119,12 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
         addLog({ type: 'system', message: '游戏开始！', timestamp: Date.now() })
         break
 
+      case 'game_restarted':
+        setGameState(data.game_state)
+        setLogs([])  // 清空日志
+        addLog({ type: 'system', message: '重新开始游戏！', timestamp: Date.now() })
+        break
+
       case 'shot_result':
         setIsShooting(false)
         addLog({
@@ -150,6 +160,12 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
   const startGame = () => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'start_game' }))
+    }
+  }
+
+  const restartGame = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'restart_game' }))
     }
   }
 
@@ -264,7 +280,7 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
             
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
-                选择技术动作：
+                选择技术动作：{gameState.is_first_shot && <span style={{ color: '#dc3545' }}> (第一球必须发球)</span>}
               </label>
               <select 
                 value={selectedSkill}
@@ -277,7 +293,7 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
                   fontSize: '16px'
                 }}
               >
-                {SKILLS.map(skill => (
+                {(gameState.is_first_shot ? ["发球"] : SKILLS).map(skill => (
                   <option key={skill} value={skill}>
                     {skill} (熟练度: {playerProfile.skills[skill] || 0})
                   </option>
@@ -381,15 +397,26 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
           <h2 style={{ fontSize: '36px', marginBottom: '20px' }}>
             🏆 游戏结束！
           </h2>
-          <p style={{ fontSize: '24px' }}>
+          <p style={{ fontSize: '24px', marginBottom: '30px' }}>
             最终比分: {gameState.score_a} - {gameState.score_b}
           </p>
-          <button 
-            onClick={onLeave}
-            style={{ marginTop: '30px', padding: '15px 40px', fontSize: '18px' }}
-          >
-            返回大厅
-          </button>
+          <p style={{ fontSize: '18px', color: '#666', marginBottom: '40px' }}>
+            {gameState.score_a > gameState.score_b ? '队伍 A 获胜！' : '队伍 B 获胜！'}
+          </p>
+          <div style={{ display: 'flex', gap: '20px', justifyContent: 'center' }}>
+            <button 
+              onClick={restartGame}
+              style={{ padding: '15px 40px', fontSize: '18px', background: '#28a745' }}
+            >
+              再来一局
+            </button>
+            <button 
+              onClick={onLeave}
+              style={{ padding: '15px 40px', fontSize: '18px', background: '#6c757d' }}
+            >
+              返回大厅
+            </button>
+          </div>
         </div>
       )}
     </div>

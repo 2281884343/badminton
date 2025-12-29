@@ -53,7 +53,9 @@ class GameRoom:
             "score_b": 0,
             "last_shot_quality": None,
             "last_shot_value": None,
-            "rally_history": []
+            "rally_history": [],
+            "is_first_shot": True,  # 是否是第一球（必须发球）
+            "rally_count": 0  # 回合计数
         }
 
 rooms: Dict[str, GameRoom] = {}
@@ -234,26 +236,44 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict) ->
         score_a = game_state.get("score_a", 0)
         score_b = game_state.get("score_b", 0)
         
-        prompt = f"""请用20字以内描述这一球的情况。
+        # 质量等级说明
+        quality_map = {
+            "critical_fail": "大失败（最差）",
+            "low": "低质量（较差）",
+            "normal": "普通",
+            "high": "高质量（优秀）",
+            "critical_success": "大成功（完美）"
+        }
+        quality_desc = quality_map.get(result['quality'], result['quality'])
+        
+        prompt = f"""你是一个专业的羽毛球比赛解说员。请用15-20字描述这一球的情况。
+
 技术动作：{skill}
-随机数：{result['final_roll']}（基础：{result['base_roll']}）
-球质量：{result['quality']}
+球的质量：{quality_desc}
+随机数值：{result['final_roll']}（满分20分）
 当前比分：{score_a}:{score_b}
 
-要求：
-1. 描述要简洁生动
-2. 根据随机数高低描述球的质量
-3. 如果是关键分，增加紧张氛围
-4. 不要超过20个字"""
+【重要规则】：
+1. 必须严格根据"球的质量"来描述：
+   - 大失败：必须用负面词汇，如"失误、下网、出界、没接到"
+   - 低质量：必须用较差词汇，如"勉强、质量不佳、回球软弱"
+   - 普通：中性词汇，如"稳健、常规"
+   - 高质量：积极词汇，如"漂亮、精准、有威胁"
+   - 大成功：极度赞美词汇，如"完美、绝杀、神仙球"
+2. 描述必须与质量等级完全匹配，不能出现"低质量球但描述很棒"的情况
+3. 简洁生动，15-20字
+4. 如果是关键分可以增加紧张感
+
+只返回描述文字，不要其他内容。"""
 
         completion = client.chat.completions.create(
             model="kimi-k2-turbo-preview",
             messages=[
-                {"role": "system", "content": "你是一个羽毛球比赛解说员，擅长用简洁生动的语言描述比赛。"},
+                {"role": "system", "content": "你是一个严谨的羽毛球比赛解说员，必须根据球的实际质量给出相应的描述，绝不能夸大或美化低质量的球。"},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.8,
-            max_tokens=50
+            temperature=0.7,  # 降低温度提高准确性
+            max_tokens=60
         )
         
         return completion.choices[0].message.content.strip()
@@ -261,13 +281,14 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict) ->
         print(f"AI生成失败: {e}")
         # 降级方案
         quality_desc = {
-            "critical_fail": "失误！",
-            "low": "质量不佳",
-            "normal": "稳健回击",
-            "high": "精彩好球！",
-            "critical_success": "完美击球！"
+            "critical_fail": "严重失误！球直接下网",
+            "low": "回球质量不佳，对方机会来了",
+            "normal": "稳健回击，保持节奏",
+            "high": "漂亮的一球！很有威胁",
+            "critical_success": "完美击球！无懈可击！"
         }
-        return f"{skill}，{quality_desc.get(result['quality'], '正常')}（{result['final_roll']}）"
+        return quality_desc.get(result['quality'], f"{skill}完成")
+
 
 # WebSocket连接管理
 @app.websocket("/ws/{room_id}/{username}")
@@ -325,14 +346,21 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
     """处理游戏动作"""
     action_type = data.get("type")
     
-    if action_type == "start_game":
-        # 开始游戏
+    if action_type == "start_game" or action_type == "restart_game":
+        # 开始游戏或重新开始
         room.game_state["status"] = "playing"
         room.game_state["current_server"] = list(room.players.keys())[0]
         room.game_state["current_receiver"] = list(room.players.keys())[1] if len(room.players) > 1 else None
+        room.game_state["score_a"] = 0
+        room.game_state["score_b"] = 0
+        room.game_state["last_shot_quality"] = None
+        room.game_state["last_shot_value"] = None
+        room.game_state["is_first_shot"] = True
+        room.game_state["rally_count"] = 0
+        room.game_state["rally_history"] = []
         
         await broadcast_to_room(room, {
-            "type": "game_started",
+            "type": "game_started" if action_type == "start_game" else "game_restarted",
             "game_state": room.game_state
         })
     
@@ -340,6 +368,14 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
         # 玩家击球
         skill = data.get("skill")
         message = data.get("message", "")
+        
+        # 检查第一球必须是发球
+        if room.game_state.get("is_first_shot", False) and skill != "发球":
+            await room.websockets[username].send_json({
+                "type": "error",
+                "message": "每回合第一球必须是发球！"
+            })
+            return
         
         # 获取玩家技能熟练度
         player_skills = room.players[username]["skills"]
@@ -369,6 +405,8 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
         # 更新游戏状态
         room.game_state["last_shot_quality"] = result["quality"]
         room.game_state["last_shot_value"] = result["final_roll"]
+        room.game_state["is_first_shot"] = False  # 第一球已打完
+        room.game_state["rally_count"] = room.game_state.get("rally_count", 0) + 1
         
         shot_info = {
             "type": "shot_result",
@@ -388,10 +426,25 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
             else:
                 room.game_state["score_b"] += 1
             
+            # 重置回合状态
+            room.game_state["is_first_shot"] = True
+            room.game_state["rally_count"] = 0
+            room.game_state["last_shot_quality"] = None
+            room.game_state["last_shot_value"] = None
+            
             shot_info["game_state"] = room.game_state
             
-            # 检查是否游戏结束
-            if room.game_state["score_a"] >= 21 or room.game_state["score_b"] >= 21:
+            # 检查是否游戏结束（21分制，赛点时需领先2分）
+            score_a = room.game_state["score_a"]
+            score_b = room.game_state["score_b"]
+            game_over = False
+            
+            # 至少21分且领先2分，或者达到30分
+            if score_a >= 21 or score_b >= 21:
+                if abs(score_a - score_b) >= 2 or score_a >= 30 or score_b >= 30:
+                    game_over = True
+            
+            if game_over:
                 room.game_state["status"] = "finished"
                 shot_info["game_over"] = True
         

@@ -22,11 +22,11 @@ start_backend() {
     cd backend
     source venv/bin/activate
     
-    # 使用gunicorn或uvicorn启动（带workers）
-    if command -v gunicorn &> /dev/null; then
-        gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080 &
+    # 使用单进程启动（WebSocket需要共享房间状态）
+    if command -v uvicorn &> /dev/null; then
+        uvicorn main:app --host 0.0.0.0 --port 8080 &
     else
-        uvicorn main:app --host 0.0.0.0 --port 8080 --workers 4 &
+        python main.py &
     fi
     
     BACKEND_PID=$!
