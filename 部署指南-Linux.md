@@ -4,7 +4,7 @@
 
 - Ubuntu 20.04+ / CentOS 8+ / Debian 11+
 - Python 3.8+
-- Node.js 16+
+- Node.js 20+ LTS（推荐）
 - Nginx（推荐用于生产环境）
 
 ## 快速部署
@@ -19,8 +19,8 @@ sudo apt update && sudo apt upgrade -y
 # 安装Python 3
 sudo apt install python3 python3-pip python3-venv -y
 
-# 安装Node.js
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# 安装Node.js 20.x LTS
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install nodejs -y
 
 # 安装Nginx（可选）
@@ -35,8 +35,8 @@ sudo yum update -y
 # 安装Python 3
 sudo yum install python3 python3-pip -y
 
-# 安装Node.js
-curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+# 安装Node.js 20.x LTS
+curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
 sudo yum install nodejs -y
 
 # 安装Nginx（可选）
@@ -47,7 +47,7 @@ sudo yum install nginx -y
 
 ```bash
 # 方法1: 使用git
-git clone <your-repo-url> /opt/badminton-game
+git clone https://github.com/2281884343/badminton /opt/badminton-game
 cd /opt/badminton-game
 
 # 方法2: 使用scp上传
