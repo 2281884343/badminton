@@ -1,0 +1,16 @@
+[Unit]
+Description=Badminton Game Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/path/to/bm/backend
+Environment="PATH=/path/to/bm/backend/venv/bin"
+ExecStart=/path/to/bm/backend/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+
