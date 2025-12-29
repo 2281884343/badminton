@@ -22,10 +22,10 @@ COPY . .
 RUN mkdir -p data/players
 
 # 暴露端口
-EXPOSE 8000
+EXPOSE 8080
 
 # 启动命令
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
 ## Dockerfile - 前端
@@ -68,7 +68,7 @@ services:
     build: ./backend
     container_name: badminton-backend
     ports:
-      - "8000:8000"
+      - "8080:8080"
     volumes:
       - ./backend/data:/app/data
     environment:
@@ -202,7 +202,7 @@ docker-compose up -d --build
 修改后端Dockerfile的CMD：
 
 ```dockerfile
-CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000"]
+CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8080"]
 ```
 
 ## 监控和日志
@@ -240,7 +240,7 @@ services:
 services:
   backend:
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/skills"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/skills"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { PlayerProfile } from '../App'
+import { API_BASE_URL } from '../config'
 
 interface Props {
   onComplete: (profile: PlayerProfile) => void
@@ -32,7 +33,7 @@ function PlayerSetup({ onComplete }: Props) {
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/player/${username}`)
+      const response = await fetch(`${API_BASE_URL}/api/player/${username}`)
       const data = await response.json()
       
       if (data.skills) {
@@ -53,7 +54,7 @@ function PlayerSetup({ onComplete }: Props) {
 
     setLoading(true)
     try {
-      const response = await fetch('/api/player/save', {
+      const response = await fetch(`${API_BASE_URL}/api/player/save`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

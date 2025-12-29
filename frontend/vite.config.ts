@@ -8,11 +8,11 @@ export default defineConfig({
     host: '0.0.0.0', // 允许外部访问
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:8080',
         changeOrigin: true,
       },
       '/ws': {
-        target: process.env.VITE_WS_URL || 'ws://localhost:8000',
+        target: process.env.VITE_WS_URL || 'ws://localhost:8080',
         ws: true,
       },
     },

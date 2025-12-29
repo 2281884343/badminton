@@ -24,9 +24,9 @@ start_backend() {
     
     # 使用gunicorn或uvicorn启动（带workers）
     if command -v gunicorn &> /dev/null; then
-        gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 &
+        gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080 &
     else
-        uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4 &
+        uvicorn main:app --host 0.0.0.0 --port 8080 --workers 4 &
     fi
     
     BACKEND_PID=$!
@@ -70,7 +70,7 @@ start_frontend
 echo ""
 echo "========================================"
 echo "生产环境已启动"
-echo "后端: http://0.0.0.0:8000"
+echo "后端: http://0.0.0.0:8080"
 echo "前端: http://0.0.0.0:3000"
 echo "========================================"
 echo "按 Ctrl+C 停止所有服务"

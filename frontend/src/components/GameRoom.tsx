@@ -58,8 +58,8 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     // 连接WebSocket - 自动适配生产环境和开发环境
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.hostname
-    const port = import.meta.env.PROD ? window.location.port : '8000'
-    const wsUrl = `${protocol}//${host}${port ? ':' + port : ''}/ws/${roomId}/${playerProfile.username}`
+    const port = '8080'  // 后端统一使用 8080 端口
+    const wsUrl = `${protocol}//${host}:${port}/ws/${roomId}/${playerProfile.username}`
     const websocket = new WebSocket(wsUrl)
 
     websocket.onopen = () => {
@@ -199,8 +199,8 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2>房间: {roomId}</h2>
-          <p style={{ color: '#666' }}>
+          <h2>🏠 房间号: <span style={{ color: '#667eea', fontSize: '32px', fontWeight: 'bold' }}>{roomId}</span></h2>
+          <p style={{ color: '#666', marginTop: '10px' }}>
             {gameMode === '2p' ? '单打模式' : '双打模式'} | 
             状态: {connected ? '✅ 已连接' : '❌ 未连接'}
           </p>

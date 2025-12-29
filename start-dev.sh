@@ -49,7 +49,7 @@ start_frontend
 echo ""
 echo "========================================"
 echo "服务已启动"
-echo "后端: http://localhost:8000"
+echo "后端: http://localhost:8080"
 echo "前端: http://localhost:3000"
 echo "========================================"
 echo "按 Ctrl+C 停止所有服务"

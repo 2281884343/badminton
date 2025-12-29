@@ -110,12 +110,19 @@ async def get_skills():
     """获取所有技能列表"""
     return {"skills": SKILLS}
 
+class CreateRoomRequest(BaseModel):
+    mode: str
+
 @app.post("/api/room/create")
-async def create_room(mode: str):
+async def create_room(request: CreateRoomRequest):
     """创建游戏房间"""
-    room_id = f"room_{datetime.now().timestamp()}"
-    rooms[room_id] = GameRoom(room_id, mode)
-    return {"room_id": room_id, "mode": mode}
+    # 生成简短的房间ID（6位随机数字）
+    room_id = str(random.randint(100000, 999999))
+    # 如果房间ID已存在，重新生成
+    while room_id in rooms:
+        room_id = str(random.randint(100000, 999999))
+    rooms[room_id] = GameRoom(room_id, request.mode)
+    return {"room_id": room_id, "mode": request.mode}
 
 @app.get("/api/rooms")
 async def list_rooms():
@@ -392,5 +399,5 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 

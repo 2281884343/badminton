@@ -204,7 +204,7 @@ client = OpenAI(
 ### WebSocket配置
 
 默认配置：
-- 后端WebSocket: `ws://localhost:8000/ws`
+- 后端WebSocket: `ws://localhost:8080/ws`
 - 前端通过Vite代理自动转发
 
 如需修改端口，请同时更新：
@@ -255,7 +255,7 @@ client = OpenAI(
 ### 1. WebSocket连接失败
 - 确保后端服务已启动
 - 检查防火墙设置
-- 确认端口8000未被占用
+- 确认端口8080未被占用
 
 ### 2. AI描述生成失败
 - 检查API密钥是否有效

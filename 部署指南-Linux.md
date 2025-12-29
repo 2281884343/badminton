@@ -202,7 +202,7 @@ sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
 # 如果不使用Nginx，需要开放应用端口
-sudo ufw allow 8000/tcp  # 后端
+sudo ufw allow 8080/tcp  # 后端
 sudo ufw allow 3000/tcp  # 前端
 
 # 重新加载防火墙
@@ -218,7 +218,7 @@ sudo firewall-cmd --permanent --add-service=http
 sudo firewall-cmd --permanent --add-service=https
 
 # 允许自定义端口
-sudo firewall-cmd --permanent --add-port=8000/tcp
+sudo firewall-cmd --permanent --add-port=8080/tcp
 sudo firewall-cmd --permanent --add-port=3000/tcp
 
 # 重新加载防火墙
@@ -257,13 +257,13 @@ source venv/bin/activate
 pip install gunicorn
 
 # 启动（4个worker进程）
-gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080
 ```
 
 #### 修改systemd服务文件
 
 ```ini
-ExecStart=/opt/badminton-game/backend/venv/bin/gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+ExecStart=/opt/badminton-game/backend/venv/bin/gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8080
 ```
 
 ### 2. 前端优化
@@ -395,8 +395,8 @@ source venv/bin/activate
 pip list
 
 # 检查端口是否被占用
-sudo netstat -tulnp | grep 8000
-sudo lsof -i :8000
+sudo netstat -tulnp | grep 8080
+sudo lsof -i :8080
 ```
 
 ### 前端无法访问

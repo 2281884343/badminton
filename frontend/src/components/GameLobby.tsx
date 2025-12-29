@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PlayerProfile } from '../App'
+import { API_BASE_URL } from '../config'
 
 interface Props {
   playerProfile: PlayerProfile
@@ -14,7 +15,7 @@ function GameLobby({ playerProfile, onJoinRoom }: Props) {
   const createRoom = async () => {
     setLoading(true)
     try {
-      const response = await fetch('/api/room/create', {
+      const response = await fetch(`${API_BASE_URL}/api/room/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -22,11 +23,21 @@ function GameLobby({ playerProfile, onJoinRoom }: Props) {
         body: JSON.stringify({ mode: selectedMode }),
       })
       
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
       const data = await response.json()
+      console.log('创建房间成功:', data)
+      
+      if (!data.room_id) {
+        throw new Error('服务器未返回房间ID')
+      }
+      
       onJoinRoom(data.room_id, selectedMode)
     } catch (error) {
       console.error('创建房间失败:', error)
-      alert('创建房间失败')
+      alert('创建房间失败: ' + error)
     } finally {
       setLoading(false)
     }
