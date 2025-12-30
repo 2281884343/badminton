@@ -43,8 +43,9 @@ class GameRoom:
     def __init__(self, room_id: str, mode: str):
         self.room_id = room_id
         self.mode = mode  # "2p" or "4p"
-        self.players: Dict[str, dict] = {}
-        self.websockets: Dict[str, WebSocket] = {}
+        self.players: Dict[str, dict] = {}  # 参赛玩家
+        self.spectators: Dict[str, dict] = {}  # 观众
+        self.websockets: Dict[str, WebSocket] = {}  # 所有连接（包括观众）
         self.game_state = {
             "status": "waiting",  # waiting, playing, finished
             "current_server": None,
@@ -55,8 +56,20 @@ class GameRoom:
             "last_shot_value": None,
             "rally_history": [],
             "is_first_shot": True,  # 是否是第一球（必须发球）
-            "rally_count": 0  # 回合计数
+            "rally_count": 0,  # 回合计数
+            "current_team": None,  # 当前该哪个队伍击球 ("A" or "B")
+            "last_player": None,  # 上一个击球的玩家
+            "team_a": [],  # 队伍A的玩家
+            "team_b": []  # 队伍B的玩家
         }
+    
+    def get_player_team(self, username: str) -> str:
+        """获取玩家所属队伍"""
+        if username in self.game_state["team_a"]:
+            return "A"
+        elif username in self.game_state["team_b"]:
+            return "B"
+        return None
 
 rooms: Dict[str, GameRoom] = {}
 
@@ -309,29 +322,65 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, username: str):
         await websocket.close()
         return
     
-    # 添加玩家到房间
-    room.players[username] = player_profile
-    room.websockets[username] = websocket
+    # 判断是否加入为观众
+    is_spectator = False
+    max_players = 2 if room.mode == "2p" else 4
     
-    # 通知所有人有新玩家加入
-    await broadcast_to_room(room, {
-        "type": "player_joined",
-        "username": username,
-        "players": list(room.players.keys()),
-        "player_count": len(room.players)
-    })
+    if room.game_state["status"] == "playing":
+        # 游戏已开始，加入观众席
+        is_spectator = True
+        room.spectators[username] = player_profile
+        room.websockets[username] = websocket
+        
+        await broadcast_to_room(room, {
+            "type": "spectator_joined",
+            "username": username,
+            "players": list(room.players.keys()),
+            "spectators": list(room.spectators.keys())
+        })
+    elif len(room.players) >= max_players:
+        # 房间已满，加入观众席
+        is_spectator = True
+        room.spectators[username] = player_profile
+        room.websockets[username] = websocket
+        
+        await broadcast_to_room(room, {
+            "type": "spectator_joined",
+            "username": username,
+            "players": list(room.players.keys()),
+            "spectators": list(room.spectators.keys())
+        })
+    else:
+        # 加入为玩家
+        room.players[username] = player_profile
+        room.websockets[username] = websocket
+        
+        await broadcast_to_room(room, {
+            "type": "player_joined",
+            "username": username,
+            "players": list(room.players.keys()),
+            "spectators": list(room.spectators.keys()),
+            "player_count": len(room.players)
+        })
     
     try:
         while True:
             data = await websocket.receive_json()
-            await handle_game_action(room, username, data)
+            await handle_game_action(room, username, data, is_spectator)
     except WebSocketDisconnect:
-        del room.players[username]
-        del room.websockets[username]
+        # 移除玩家或观众
+        if username in room.players:
+            del room.players[username]
+        if username in room.spectators:
+            del room.spectators[username]
+        if username in room.websockets:
+            del room.websockets[username]
+            
         await broadcast_to_room(room, {
-            "type": "player_left",
+            "type": "player_left" if not is_spectator else "spectator_left",
             "username": username,
-            "players": list(room.players.keys())
+            "players": list(room.players.keys()),
+            "spectators": list(room.spectators.keys())
         })
 
 async def broadcast_to_room(room: GameRoom, message: dict):
@@ -342,15 +391,43 @@ async def broadcast_to_room(room: GameRoom, message: dict):
         except:
             pass
 
-async def handle_game_action(room: GameRoom, username: str, data: dict):
+async def handle_game_action(room: GameRoom, username: str, data: dict, is_spectator: bool = False):
     """处理游戏动作"""
     action_type = data.get("type")
     
+    # 观众不能执行游戏动作
+    if is_spectator and action_type in ["start_game", "restart_game", "shot"]:
+        await room.websockets[username].send_json({
+            "type": "error",
+            "message": "观众不能参与游戏操作"
+        })
+        return
+    
     if action_type == "start_game" or action_type == "restart_game":
         # 开始游戏或重新开始
+        player_list = list(room.players.keys())
+        
+        # 分配队伍
+        if room.mode == "2p":
+            # 单打：一人一队
+            room.game_state["team_a"] = [player_list[0]] if len(player_list) > 0 else []
+            room.game_state["team_b"] = [player_list[1]] if len(player_list) > 1 else []
+        else:
+            # 双打：前两人A队，后两人B队
+            room.game_state["team_a"] = player_list[:2]
+            room.game_state["team_b"] = player_list[2:4] if len(player_list) > 2 else []
+        
+        # 随机决定哪队先发球
+        first_team = random.choice(["A", "B"])
+        room.game_state["current_team"] = first_team
+        
+        # 从先发球队伍中随机选一个人发球
+        if first_team == "A" and room.game_state["team_a"]:
+            room.game_state["current_server"] = random.choice(room.game_state["team_a"])
+        elif room.game_state["team_b"]:
+            room.game_state["current_server"] = random.choice(room.game_state["team_b"])
+        
         room.game_state["status"] = "playing"
-        room.game_state["current_server"] = list(room.players.keys())[0]
-        room.game_state["current_receiver"] = list(room.players.keys())[1] if len(room.players) > 1 else None
         room.game_state["score_a"] = 0
         room.game_state["score_b"] = 0
         room.game_state["last_shot_quality"] = None
@@ -358,6 +435,7 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
         room.game_state["is_first_shot"] = True
         room.game_state["rally_count"] = 0
         room.game_state["rally_history"] = []
+        room.game_state["last_player"] = None
         
         await broadcast_to_room(room, {
             "type": "game_started" if action_type == "start_game" else "game_restarted",
@@ -368,6 +446,31 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
         # 玩家击球
         skill = data.get("skill")
         message = data.get("message", "")
+        
+        # 获取玩家所属队伍
+        player_team = room.get_player_team(username)
+        if not player_team:
+            await room.websockets[username].send_json({
+                "type": "error",
+                "message": "您不在任何队伍中"
+            })
+            return
+        
+        # 检查是否轮到该队伍击球
+        if room.game_state["current_team"] and room.game_state["current_team"] != player_team:
+            await room.websockets[username].send_json({
+                "type": "error",
+                "message": f"现在是队伍{room.game_state['current_team']}的回合，请等待！"
+            })
+            return
+        
+        # 检查是否同队连续击球（双打情况下，同队只能一人击一次）
+        if room.game_state["last_player"] == username:
+            await room.websockets[username].send_json({
+                "type": "error",
+                "message": "您刚刚已经击球，不能连续击球！"
+            })
+            return
         
         # 检查第一球必须是发球
         if room.game_state.get("is_first_shot", False) and skill != "发球":
@@ -407,6 +510,11 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
         room.game_state["last_shot_value"] = result["final_roll"]
         room.game_state["is_first_shot"] = False  # 第一球已打完
         room.game_state["rally_count"] = room.game_state.get("rally_count", 0) + 1
+        room.game_state["last_player"] = username
+        
+        # 切换队伍（下一球由对方击球）
+        player_team = room.get_player_team(username)
+        room.game_state["current_team"] = "B" if player_team == "A" else "A"
         
         shot_info = {
             "type": "shot_result",
@@ -421,16 +529,19 @@ async def handle_game_action(room: GameRoom, username: str, data: dict):
         
         # 如果得分，更新比分
         if scored:
-            if username in [list(room.players.keys())[0]]:
+            scorer_team = room.get_player_team(username)
+            if scorer_team == "A":
                 room.game_state["score_a"] += 1
             else:
                 room.game_state["score_b"] += 1
             
-            # 重置回合状态
+            # 重置回合状态，得分方发球
             room.game_state["is_first_shot"] = True
             room.game_state["rally_count"] = 0
             room.game_state["last_shot_quality"] = None
             room.game_state["last_shot_value"] = None
+            room.game_state["last_player"] = None
+            room.game_state["current_team"] = scorer_team  # 得分方发球
             
             shot_info["game_state"] = room.game_state
             

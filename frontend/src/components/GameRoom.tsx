@@ -18,6 +18,10 @@ interface GameState {
   last_shot_value: number | null
   is_first_shot?: boolean
   rally_count?: number
+  current_team?: string | null
+  last_player?: string | null
+  team_a?: string[]
+  team_b?: string[]
 }
 
 interface LogEntry {
@@ -40,6 +44,8 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
   const [ws, setWs] = useState<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
   const [players, setPlayers] = useState<string[]>([])
+  const [spectators, setSpectators] = useState<string[]>([])
+  const [isSpectator, setIsSpectator] = useState(false)
   const [gameState, setGameState] = useState<GameState>({
     status: 'waiting',
     current_server: null,
@@ -49,7 +55,11 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     last_shot_quality: null,
     last_shot_value: null,
     is_first_shot: true,
-    rally_count: 0
+    rally_count: 0,
+    current_team: null,
+    last_player: null,
+    team_a: [],
+    team_b: []
   })
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [selectedSkill, setSelectedSkill] = useState(SKILLS[0])
@@ -106,12 +116,29 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     switch (data.type) {
       case 'player_joined':
         setPlayers(data.players)
+        setSpectators(data.spectators || [])
         addLog({ type: 'system', message: `${data.username} 加入了房间`, timestamp: Date.now() })
+        break
+
+      case 'spectator_joined':
+        setPlayers(data.players)
+        setSpectators(data.spectators || [])
+        if (data.username === playerProfile.username) {
+          setIsSpectator(true)
+        }
+        addLog({ type: 'system', message: `${data.username} 作为观众加入`, timestamp: Date.now() })
         break
 
       case 'player_left':
         setPlayers(data.players)
+        setSpectators(data.spectators || [])
         addLog({ type: 'system', message: `${data.username} 离开了房间`, timestamp: Date.now() })
+        break
+
+      case 'spectator_left':
+        setPlayers(data.players)
+        setSpectators(data.spectators || [])
+        addLog({ type: 'system', message: `观众 ${data.username} 离开了`, timestamp: Date.now() })
         break
 
       case 'game_started':
@@ -169,6 +196,17 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     }
   }
 
+  // 判断当前玩家是否可以击球
+  const canShoot = () => {
+    if (isSpectator) return false
+    if (gameState.status !== 'playing') return false
+    
+    const myTeam = gameState.team_a?.includes(playerProfile.username) ? 'A' : 
+                   gameState.team_b?.includes(playerProfile.username) ? 'B' : null
+    
+    return myTeam === gameState.current_team
+  }
+
   const performShot = () => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       alert('未连接到服务器')
@@ -176,6 +214,11 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     }
 
     if (isShooting) {
+      return
+    }
+
+    if (!canShoot()) {
+      alert('现在不是您的回合！')
       return
     }
 
@@ -239,18 +282,74 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
         </div>
       </div>
 
-      {/* 玩家列表 */}
-      <div className="players-list">
-        {players.map((player, index) => (
-          <div key={player} className="player-card">
-            <strong>{player}</strong>
-            {player === playerProfile.username && ' (你)'}
-            <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-              队伍 {index < (gameMode === '2p' ? 1 : 2) ? 'A' : 'B'}
+      {/* 队伍和玩家列表 */}
+      <div style={{ display: 'grid', gridTemplateColumns: spectators.length > 0 ? '1fr 1fr 200px' : '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+        <div style={{ background: '#e3f2fd', padding: '15px', borderRadius: '8px' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#1976d2' }}>🔵 队伍 A {gameState.current_team === 'A' && '⚡️'}</h3>
+          {gameState.team_a?.map(player => (
+            <div key={player} style={{ 
+              padding: '8px', 
+              marginBottom: '5px', 
+              background: player === playerProfile.username ? '#bbdefb' : 'white',
+              borderRadius: '4px',
+              fontWeight: player === gameState.last_player ? 'bold' : 'normal'
+            }}>
+              {player} {player === playerProfile.username && '(你)'}
+              {player === gameState.last_player && ' 🏸'}
             </div>
+          ))}
+        </div>
+
+        <div style={{ background: '#fff3e0', padding: '15px', borderRadius: '8px' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#f57c00' }}>🟠 队伍 B {gameState.current_team === 'B' && '⚡️'}</h3>
+          {gameState.team_b?.map(player => (
+            <div key={player} style={{ 
+              padding: '8px', 
+              marginBottom: '5px', 
+              background: player === playerProfile.username ? '#ffe0b2' : 'white',
+              borderRadius: '4px',
+              fontWeight: player === gameState.last_player ? 'bold' : 'normal'
+            }}>
+              {player} {player === playerProfile.username && '(你)'}
+              {player === gameState.last_player && ' 🏸'}
+            </div>
+          ))}
+        </div>
+
+        {spectators.length > 0 && (
+          <div style={{ background: '#f5f5f5', padding: '15px', borderRadius: '8px' }}>
+            <h3 style={{ margin: '0 0 10px 0', color: '#666' }}>👥 观众席</h3>
+            {spectators.map(spectator => (
+              <div key={spectator} style={{ 
+                padding: '8px', 
+                marginBottom: '5px', 
+                background: spectator === playerProfile.username ? '#e0e0e0' : 'white',
+                borderRadius: '4px'
+              }}>
+                {spectator} {spectator === playerProfile.username && '(你)'}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
+
+      {/* 当前回合提示 */}
+      {gameState.status === 'playing' && (
+        <div style={{ 
+          textAlign: 'center', 
+          padding: '15px', 
+          background: canShoot() ? '#d4edda' : '#f8d7da',
+          color: canShoot() ? '#155724' : '#721c24',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          fontSize: '18px',
+          fontWeight: 'bold'
+        }}>
+          {isSpectator ? '您正在观战' : 
+           canShoot() ? '✅ 轮到您的队伍击球！' : 
+           `⏳ 等待队伍${gameState.current_team}击球...`}
+        </div>
+      )}
 
       {/* 等待区 */}
       {gameState.status === 'waiting' && (
@@ -272,11 +371,12 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
       {/* 游戏区 */}
       {gameState.status === 'playing' && (
         <div>
-          <div className="chat-box">
-            <h3>对话与击球</h3>
-            <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
-              选择技术动作，输入对话（可选），然后点击击球按钮
-            </p>
+          {!isSpectator && (
+            <div className="chat-box">
+              <h3>对话与击球</h3>
+              <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
+                选择技术动作，输入对话（可选），然后点击击球按钮
+              </p>
             
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
@@ -307,17 +407,19 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
                 value={chatMessage}
                 onChange={(e) => setChatMessage(e.target.value)}
                 placeholder="输入对话内容（可选）"
-                onKeyPress={(e) => e.key === 'Enter' && performShot()}
+                onKeyPress={(e) => e.key === 'Enter' && canShoot() && performShot()}
+                disabled={!canShoot()}
               />
               <button 
                 onClick={performShot} 
-                disabled={isShooting || !connected}
+                disabled={isShooting || !connected || !canShoot()}
                 style={{ minWidth: '100px' }}
               >
-                {isShooting ? '击球中...' : '击球！'}
+                {isShooting ? '击球中...' : !canShoot() ? '等待中...' : '击球！'}
               </button>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* 游戏日志 */}
           <div className="game-log" ref={logRef}>
