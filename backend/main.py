@@ -424,6 +424,19 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
     """处理游戏动作"""
     action_type = data.get("type")
     
+    # 聊天消息，所有人都可以发送
+    if action_type == "chat":
+        chat_message = data.get("message", "").strip()
+        if chat_message:
+            await broadcast_to_room(room, {
+                "type": "chat_message",
+                "username": username,
+                "message": chat_message,
+                "is_spectator": is_spectator,
+                "timestamp": datetime.now().isoformat()
+            })
+        return
+    
     # 观众不能执行游戏动作
     if is_spectator and action_type in ["start_game", "restart_game", "shot"]:
         await room.websockets[username].send_json({

@@ -35,6 +35,13 @@ interface LogEntry {
   timestamp: number
 }
 
+interface ChatMessage {
+  username: string
+  message: string
+  is_spectator: boolean
+  timestamp: string
+}
+
 const SKILLS = [
   "发球", "接发球", "高远球", "杀球", "吊球", 
   "挑球", "放网", "扑球", "勾球", "搓球"
@@ -65,8 +72,11 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
   const [selectedSkill, setSelectedSkill] = useState(SKILLS[0])
   const [chatMessage, setChatMessage] = useState('')
   const [isShooting, setIsShooting] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
   
   const logRef = useRef<HTMLDivElement>(null)
+  const chatRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     // 连接WebSocket - 自动适配生产环境和开发环境
@@ -109,6 +119,13 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
       logRef.current.scrollTop = logRef.current.scrollHeight
     }
   }, [logs])
+
+  useEffect(() => {
+    // 自动滚动到最新聊天消息
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight
+    }
+  }, [chatMessages])
 
   const handleMessage = (data: any) => {
     console.log('收到消息:', data)
@@ -174,6 +191,15 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
         }
         break
 
+      case 'chat_message':
+        setChatMessages(prev => [...prev, {
+          username: data.username,
+          message: data.message,
+          is_spectator: data.is_spectator,
+          timestamp: data.timestamp
+        }])
+        break
+
       case 'error':
         alert(data.message)
         break
@@ -194,6 +220,23 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'restart_game' }))
     }
+  }
+
+  const sendChatMessage = () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return
+    }
+    
+    if (!chatInput.trim()) {
+      return
+    }
+
+    ws.send(JSON.stringify({
+      type: 'chat',
+      message: chatInput
+    }))
+
+    setChatInput('')
   }
 
   // 判断当前玩家是否可以击球
@@ -353,18 +396,111 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
 
       {/* 等待区 */}
       {gameState.status === 'waiting' && (
-        <div className="waiting-room">
-          <p style={{ fontSize: '18px', marginBottom: '20px' }}>
-            等待玩家加入... ({players.length}/{gameMode === '2p' ? 2 : 4})
-          </p>
-          {players.length >= (gameMode === '2p' ? 2 : 2) && (
-            <button 
-              onClick={startGame}
-              style={{ padding: '15px 40px', fontSize: '18px' }}
+        <div>
+          <div className="waiting-room">
+            <p style={{ fontSize: '18px', marginBottom: '20px' }}>
+              等待玩家加入... ({players.length}/{gameMode === '2p' ? 2 : 4})
+            </p>
+            {players.length >= (gameMode === '2p' ? 2 : 2) && !isSpectator && (
+              <button 
+                onClick={startGame}
+                style={{ padding: '15px 40px', fontSize: '18px' }}
+              >
+                开始游戏
+              </button>
+            )}
+          </div>
+
+          {/* 等待时的聊天区 */}
+          <div style={{ marginTop: '30px', maxWidth: '600px', margin: '30px auto' }}>
+            <h3 style={{ marginBottom: '15px' }}>💬 交流区</h3>
+            
+            <div 
+              ref={chatRef}
+              style={{ 
+                height: '300px',
+                overflowY: 'auto',
+                background: '#f9f9f9',
+                padding: '15px',
+                borderRadius: '8px',
+                marginBottom: '10px'
+              }}
             >
-              开始游戏
-            </button>
-          )}
+              {chatMessages.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+                  暂无消息，快来聊天吧！
+                </div>
+              ) : (
+                chatMessages.map((msg, index) => (
+                  <div 
+                    key={index} 
+                    style={{ 
+                      marginBottom: '12px',
+                      padding: '10px',
+                      background: msg.username === playerProfile.username ? '#e3f2fd' : 'white',
+                      borderRadius: '6px',
+                      borderLeft: msg.is_spectator ? '3px solid #999' : '3px solid #667eea'
+                    }}
+                  >
+                    <div style={{ 
+                      fontSize: '12px', 
+                      color: '#666',
+                      marginBottom: '4px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span>
+                        <strong style={{ color: msg.is_spectator ? '#999' : '#667eea' }}>
+                          {msg.username}
+                        </strong>
+                        {msg.is_spectator && ' 👁️'}
+                        {msg.username === playerProfile.username && ' (你)'}
+                      </span>
+                      <span style={{ fontSize: '10px' }}>
+                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#333', wordBreak: 'break-word' }}>
+                      {msg.message}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
+                placeholder="输入消息..."
+                style={{ 
+                  flex: 1,
+                  padding: '10px',
+                  border: '2px solid #e0e0e0',
+                  borderRadius: '6px',
+                  fontSize: '14px'
+                }}
+                disabled={!connected}
+              />
+              <button 
+                onClick={sendChatMessage}
+                disabled={!connected || !chatInput.trim()}
+                style={{ 
+                  padding: '10px 20px',
+                  minWidth: '80px',
+                  fontSize: '14px'
+                }}
+              >
+                发送
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -421,9 +557,11 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
             </div>
           )}
 
-          {/* 游戏日志 */}
-          <div className="game-log" ref={logRef}>
-            <h3>比赛记录</h3>
+          {/* 游戏记录和聊天区 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
+            {/* 游戏日志 */}
+            <div className="game-log" ref={logRef}>
+              <h3>⚡ 比赛记录</h3>
             {logs.map((log, index) => (
               <div key={index} className="log-entry">
                 {log.type === 'system' && (
@@ -489,6 +627,100 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
                 )}
               </div>
             ))}
+            </div>
+
+            {/* 聊天区 */}
+            <div style={{ display: 'flex', flexDirection: 'column', height: '500px' }}>
+              <h3 style={{ margin: '0 0 15px 0' }}>💬 交流区</h3>
+              
+              {/* 聊天消息列表 */}
+              <div 
+                ref={chatRef}
+                style={{ 
+                  flex: 1,
+                  overflowY: 'auto',
+                  background: '#f9f9f9',
+                  padding: '15px',
+                  borderRadius: '8px',
+                  marginBottom: '10px'
+                }}
+              >
+                {chatMessages.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+                    暂无消息，快来聊天吧！
+                  </div>
+                ) : (
+                  chatMessages.map((msg, index) => (
+                    <div 
+                      key={index} 
+                      style={{ 
+                        marginBottom: '12px',
+                        padding: '10px',
+                        background: msg.username === playerProfile.username ? '#e3f2fd' : 'white',
+                        borderRadius: '6px',
+                        borderLeft: msg.is_spectator ? '3px solid #999' : '3px solid #667eea'
+                      }}
+                    >
+                      <div style={{ 
+                        fontSize: '12px', 
+                        color: '#666',
+                        marginBottom: '4px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <span>
+                          <strong style={{ color: msg.is_spectator ? '#999' : '#667eea' }}>
+                            {msg.username}
+                          </strong>
+                          {msg.is_spectator && ' 👁️'}
+                          {msg.username === playerProfile.username && ' (你)'}
+                        </span>
+                        <span style={{ fontSize: '10px' }}>
+                          {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#333', wordBreak: 'break-word' }}>
+                        {msg.message}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* 聊天输入框 */}
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
+                  placeholder="输入消息..."
+                  style={{ 
+                    flex: 1,
+                    padding: '10px',
+                    border: '2px solid #e0e0e0',
+                    borderRadius: '6px',
+                    fontSize: '14px'
+                  }}
+                  disabled={!connected}
+                />
+                <button 
+                  onClick={sendChatMessage}
+                  disabled={!connected || !chatInput.trim()}
+                  style={{ 
+                    padding: '10px 20px',
+                    minWidth: '80px',
+                    fontSize: '14px'
+                  }}
+                >
+                  发送
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
