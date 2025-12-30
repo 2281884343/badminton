@@ -543,58 +543,60 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
         base_roll = random.randint(1, 20)
         result = calculate_shot_result(base_roll, skill_level, low_quality_bonus)
         
-        # 判断是否得分（基于击球质量和对方能否接住）
+        # 判断是否得分
         scored = False
         scorer = None
         score_reason = None
         
-        # 1. 自己大失败，直接失分（球下网、出界等）
-        if result["is_critical_fail"] or result["final_roll"] <= 2:
+        # 第一步：检查自己击球时是否失误（下网/出界）
+        if result["is_critical_fail"]:
+            # 大失败：直接失误
             scored = True
-            # 失分的是击球方的对方
             opponent_team = "B" if player_team == "A" else "A"
-            # 找到对方队伍的一个玩家作为得分者
             opponent_players = room.game_state["team_b"] if opponent_team == "B" else room.game_state["team_a"]
             if opponent_players:
-                scorer = opponent_players[0]  # 简化处理，记为对方队伍得分
-            score_reason = "对方失误"
+                scorer = opponent_players[0]
+            score_reason = "下网" if random.random() < 0.5 else "出界"
+        elif result["final_roll"] <= 3:
+            # 极低分：严重失误
+            scored = True
+            opponent_team = "B" if player_team == "A" else "A"
+            opponent_players = room.game_state["team_b"] if opponent_team == "B" else room.game_state["team_a"]
+            if opponent_players:
+                scorer = opponent_players[0]
+            score_reason = "出界"
         
-        # 2. 如果是第一球之后，判断对方是否能接住这一球
-        elif not room.game_state.get("is_first_shot", True):
-            # 模拟对方接球（使用对方队伍的平均技能水平）
-            opponent_team = "B" if player_team == "A" else "A"
-            opponent_players = room.game_state["team_b"] if opponent_team == "B" else room.game_state["team_a"]
+        # 第二步：如果不是第一球，检查自己能否接住上一球（现在才判断）
+        if not scored and not room.game_state.get("is_first_shot", True):
+            last_quality = room.game_state.get("last_shot_quality")
+            last_value = room.game_state.get("last_shot_value")
             
-            if opponent_players:
-                # 计算对方队伍平均技能水平（简化处理，使用接发球技能）
-                avg_skill = 0
-                for opp in opponent_players:
-                    if opp in room.players:
-                        opp_skills = room.players[opp]["skills"]
-                        # 根据当前技能类型选择对应的防守技能
-                        if skill == "杀球":
-                            avg_skill += opp_skills.get("挑球", 0)
-                        elif skill == "吊球":
-                            avg_skill += opp_skills.get("放网", 0)
-                        else:
-                            avg_skill += opp_skills.get("接发球", 0)
-                avg_skill = avg_skill // len(opponent_players)
+            # 判断自己能否接住对方上一球
+            if last_quality and last_value:
+                # 计算自己的接球能力
+                receive_skill_name = "接发球"
+                if last_quality in ["high", "critical_success"]:
+                    # 对方高质量球，需要用特殊技能防守
+                    receive_skill_name = "挑球"  # 简化处理
                 
-                # 对方尝试接球
-                defense_roll = random.randint(1, 20)
-                defense_result = calculate_shot_result(defense_roll, avg_skill, 0)
+                my_receive_skill = player_skills.get(receive_skill_name, 0)
+                
+                # 尝试接球
+                receive_roll = random.randint(1, 20)
+                receive_result = calculate_shot_result(receive_roll, my_receive_skill, 0)
                 
                 # 判断能否接住
-                if not can_receive_shot(defense_result, result["quality"], result["final_roll"]):
+                if not can_receive_shot(receive_result, last_quality, last_value):
+                    # 接不住！对方得分（上一个击球的人）
                     scored = True
-                    scorer = username
-                    score_reason = "对方无法回击"
+                    scorer = room.game_state.get("last_player")
+                    score_reason = "没接到"
         
-        # 3. 大成功的杀球，依然是必杀
-        if result["is_critical_success"] and skill == "杀球":
-            scored = True
-            scorer = username
-            score_reason = "完美杀球"
+        # 第三步：特殊情况 - 大成功的杀球
+        if not scored and result["is_critical_success"] and skill == "杀球":
+            # 记录为极高质量，让对方很难接住（但不是立即得分）
+            # 下一回合对方击球时会判断能否接住
+            pass
         
         # 生成AI描述（结合玩家输入的对话和得分情况）
         description = await generate_ai_description(skill, result, room.game_state, message, scored, score_reason)
