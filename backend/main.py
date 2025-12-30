@@ -625,7 +625,9 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
         
         # 如果得分，更新比分
         if scored:
-            scorer_team = room.get_player_team(username)
+            # 重要：使用 scorer（得分者）而不是 username（击球者）
+            # 因为失误时，scorer 是对方队伍的人
+            scorer_team = room.get_player_team(scorer)
             if scorer_team == "A":
                 room.game_state["score_a"] += 1
             else:
@@ -637,7 +639,7 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
             room.game_state["last_shot_quality"] = None
             room.game_state["last_shot_value"] = None
             room.game_state["last_player"] = None
-            room.game_state["current_team"] = scorer_team  # 得分方发球
+            room.game_state["current_team"] = scorer_team  # 得分方发球（换发球）
             
             # 检查是否游戏结束（21分制，赛点时需领先2分）
             score_a = room.game_state["score_a"]
