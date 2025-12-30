@@ -237,13 +237,15 @@ def can_receive_shot(defense_result: dict, attack_quality: str, attack_final_rol
     # 普通球和低质量球都能接住
     return True
 
-async def generate_ai_description(skill: str, result: dict, game_state: dict, player_message: str = "") -> str:
+async def generate_ai_description(skill: str, result: dict, game_state: dict, player_message: str = "", scored: bool = False, score_reason: str = None) -> str:
     """
     调用AI生成击球描述
     :param skill: 使用的技能
     :param result: 击球结果
     :param game_state: 游戏状态
     :param player_message: 玩家输入的对话内容
+    :param scored: 是否得分
+    :param score_reason: 得分原因
     :return: AI生成的描述
     """
     try:
@@ -262,6 +264,7 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict, pl
         
         # 构建提示词
         player_intent = f"\n玩家意图：{player_message}" if player_message.strip() else ""
+        score_info = f"\n【得分情况】：是，原因：{score_reason}" if scored else "\n【得分情况】：否，回合继续"
         
         prompt = f"""你是一个顶级的羽毛球比赛解说员，拥有专业的解说素养和幽默风趣的风格。
 
@@ -269,15 +272,16 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict, pl
 技术动作：{skill}
 实际效果：{quality_desc}
 数值：{result['final_roll']}/20分（基础掷骰：{result['base_roll']}/20）
-当前比分：{score_a}:{score_b}{player_intent}
+当前比分：{score_a}:{score_b}{player_intent}{score_info}
 
 【解说规则】
-1. 必须客观反映实际效果：
-   - 大失败（1-2分）：严重失误，如"球挂网了！"、"直接出界！"、"根本没碰到球！"
+1. 必须客观反映实际效果和得分情况：
+   - 如果得分，务必说明得分（如"得分了！"、"拿下这一分！"、"这球得分！"）
+   - 大失败（1-2分）：严重失误，如"球挂网了！"、"直接出界！"、"根本没碰到球！对方得分！"
    - 低质量（3-8分）：较差表现，如"回球无力"、"质量堪忧"、"给了对手好机会"
    - 普通（9-14分）：中规中矩，如"稳健处理"、"常规回球"、"保持节奏"
-   - 高质量（15-19分）：精彩表现，如"这球质量很高！"、"极具威胁！"、"漂亮的回击！"
-   - 大成功（20分）：完美表现，如"神仙球！"、"无懈可击！"、"教科书般的一击！"
+   - 高质量（15-19分）：精彩表现，如"这球质量很高！"、"极具威胁！"、"对方难以招架！得分！"
+   - 大成功（20分）：完美表现，如"神仙球！直接得分！"、"无懈可击！"、"教科书般的一击！拿下这分！"
 
 2. 如果玩家有输入意图描述：
    - 当意图与实际效果一致时：赞美玩家，如"正如他所想，完美执行！"
@@ -321,6 +325,10 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict, pl
             "critical_success": "完美击球！无懈可击！"
         }
         base_desc = quality_base.get(result['quality'], f"{skill}完成")
+        
+        # 添加得分信息
+        if scored:
+            base_desc += f" 得分！({score_reason})"
         
         # 如果有玩家输入，尝试结合
         if player_message.strip():
@@ -535,17 +543,61 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
         base_roll = random.randint(1, 20)
         result = calculate_shot_result(base_roll, skill_level, low_quality_bonus)
         
-        # 生成AI描述（结合玩家输入的对话）
-        description = await generate_ai_description(skill, result, room.game_state, message)
-        
-        # 判断是否得分
+        # 判断是否得分（基于击球质量和对方能否接住）
         scored = False
         scorer = None
+        score_reason = None
         
-        # 如果是大成功且是杀球，直接得分
+        # 1. 自己大失败，直接失分（球下网、出界等）
+        if result["is_critical_fail"] or result["final_roll"] <= 2:
+            scored = True
+            # 失分的是击球方的对方
+            opponent_team = "B" if player_team == "A" else "A"
+            # 找到对方队伍的一个玩家作为得分者
+            opponent_players = room.game_state["team_b"] if opponent_team == "B" else room.game_state["team_a"]
+            if opponent_players:
+                scorer = opponent_players[0]  # 简化处理，记为对方队伍得分
+            score_reason = "对方失误"
+        
+        # 2. 如果是第一球之后，判断对方是否能接住这一球
+        elif not room.game_state.get("is_first_shot", True):
+            # 模拟对方接球（使用对方队伍的平均技能水平）
+            opponent_team = "B" if player_team == "A" else "A"
+            opponent_players = room.game_state["team_b"] if opponent_team == "B" else room.game_state["team_a"]
+            
+            if opponent_players:
+                # 计算对方队伍平均技能水平（简化处理，使用接发球技能）
+                avg_skill = 0
+                for opp in opponent_players:
+                    if opp in room.players:
+                        opp_skills = room.players[opp]["skills"]
+                        # 根据当前技能类型选择对应的防守技能
+                        if skill == "杀球":
+                            avg_skill += opp_skills.get("挑球", 0)
+                        elif skill == "吊球":
+                            avg_skill += opp_skills.get("放网", 0)
+                        else:
+                            avg_skill += opp_skills.get("接发球", 0)
+                avg_skill = avg_skill // len(opponent_players)
+                
+                # 对方尝试接球
+                defense_roll = random.randint(1, 20)
+                defense_result = calculate_shot_result(defense_roll, avg_skill, 0)
+                
+                # 判断能否接住
+                if not can_receive_shot(defense_result, result["quality"], result["final_roll"]):
+                    scored = True
+                    scorer = username
+                    score_reason = "对方无法回击"
+        
+        # 3. 大成功的杀球，依然是必杀
         if result["is_critical_success"] and skill == "杀球":
             scored = True
             scorer = username
+            score_reason = "完美杀球"
+        
+        # 生成AI描述（结合玩家输入的对话和得分情况）
+        description = await generate_ai_description(skill, result, room.game_state, message, scored, score_reason)
         
         # 更新游戏状态
         room.game_state["last_shot_quality"] = result["quality"]
@@ -567,6 +619,7 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
             "description": description,
             "scored": scored,
             "scorer": scorer,
+            "score_reason": score_reason,
             "game_state": room.game_state  # 每次击球都发送更新后的状态
         }
         
