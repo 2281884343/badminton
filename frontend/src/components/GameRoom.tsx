@@ -373,9 +373,9 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
         <div>
           {!isSpectator && (
             <div className="chat-box">
-              <h3>对话与击球</h3>
+              <h3>💬 击球意图与动作</h3>
               <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
-                选择技术动作，输入对话（可选），然后点击击球按钮
+                💡 可以描述你的击球意图（如"全力扣杀"、"刁钻角度"、"稳健防守"），AI解说员会结合你的意图和实际效果进行专业解说
               </p>
             
             <div style={{ marginBottom: '15px' }}>
@@ -406,7 +406,7 @@ function GameRoom({ playerProfile, roomId, gameMode, onLeave }: Props) {
                 type="text"
                 value={chatMessage}
                 onChange={(e) => setChatMessage(e.target.value)}
-                placeholder="输入对话内容（可选）"
+                placeholder="描述你的击球意图，如：全力扣杀、刁钻角度、稳健防守..."
                 onKeyPress={(e) => e.key === 'Enter' && canShoot() && performShot()}
                 disabled={!canShoot()}
               />

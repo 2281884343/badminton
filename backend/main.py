@@ -237,12 +237,13 @@ def can_receive_shot(defense_result: dict, attack_quality: str, attack_final_rol
     # 普通球和低质量球都能接住
     return True
 
-async def generate_ai_description(skill: str, result: dict, game_state: dict) -> str:
+async def generate_ai_description(skill: str, result: dict, game_state: dict, player_message: str = "") -> str:
     """
     调用AI生成击球描述
     :param skill: 使用的技能
     :param result: 击球结果
     :param game_state: 游戏状态
+    :param player_message: 玩家输入的对话内容
     :return: AI生成的描述
     """
     try:
@@ -259,25 +260,44 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict) ->
         }
         quality_desc = quality_map.get(result['quality'], result['quality'])
         
-        prompt = f"""你是一个专业的羽毛球比赛解说员。请用15-20字描述这一球的情况。
+        # 构建提示词
+        player_intent = f"\n玩家意图：{player_message}" if player_message.strip() else ""
+        
+        prompt = f"""你是一个顶级的羽毛球比赛解说员，拥有专业的解说素养和幽默风趣的风格。
 
+【比赛情况】
 技术动作：{skill}
-球的质量：{quality_desc}
-随机数值：{result['final_roll']}（满分20分）
-当前比分：{score_a}:{score_b}
+实际效果：{quality_desc}
+数值：{result['final_roll']}/20分（基础掷骰：{result['base_roll']}/20）
+当前比分：{score_a}:{score_b}{player_intent}
 
-【重要规则】：
-1. 必须严格根据"球的质量"来描述：
-   - 大失败：必须用负面词汇，如"失误、下网、出界、没接到"
-   - 低质量：必须用较差词汇，如"勉强、质量不佳、回球软弱"
-   - 普通：中性词汇，如"稳健、常规"
-   - 高质量：积极词汇，如"漂亮、精准、有威胁"
-   - 大成功：极度赞美词汇，如"完美、绝杀、神仙球"
-2. 描述必须与质量等级完全匹配，不能出现"低质量球但描述很棒"的情况
-3. 简洁生动，15-20字
-4. 如果是关键分可以增加紧张感
+【解说规则】
+1. 必须客观反映实际效果：
+   - 大失败（1-2分）：严重失误，如"球挂网了！"、"直接出界！"、"根本没碰到球！"
+   - 低质量（3-8分）：较差表现，如"回球无力"、"质量堪忧"、"给了对手好机会"
+   - 普通（9-14分）：中规中矩，如"稳健处理"、"常规回球"、"保持节奏"
+   - 高质量（15-19分）：精彩表现，如"这球质量很高！"、"极具威胁！"、"漂亮的回击！"
+   - 大成功（20分）：完美表现，如"神仙球！"、"无懈可击！"、"教科书般的一击！"
 
-只返回描述文字，不要其他内容。"""
+2. 如果玩家有输入意图描述：
+   - 当意图与实际效果一致时：赞美玩家，如"正如他所想，完美执行！"
+   - 当意图与实际效果不符时：制造戏剧性，如"想法很好，可惜..."、"事与愿违！"
+   - 融入玩家的想法到解说中，让解说更生动
+
+3. 专业解说要素：
+   - 用词精准，符合羽毛球术语
+   - 制造画面感，让人身临其境
+   - 如果是关键分（19分以上），增加紧张感和激情
+   - 可适当幽默但不失专业
+
+4. 字数：20-30字，简洁有力
+
+【示例】
+- 大失败+玩家说"全力一击"："想要全力扣杀，可惜球直接挂网了！机会浪费！"
+- 高质量+玩家说"刁钻角度"："刁钻的角度！这球落点精准，对手疲于奔命！"
+- 低质量+没有玩家输入："回球质量不高，软绵绵的，给对手创造了进攻机会"
+
+只返回解说词，不要其他内容。"""
 
         completion = client.chat.completions.create(
             model="kimi-k2-turbo-preview",
@@ -293,14 +313,23 @@ async def generate_ai_description(skill: str, result: dict, game_state: dict) ->
     except Exception as e:
         print(f"AI生成失败: {e}")
         # 降级方案
-        quality_desc = {
+        quality_base = {
             "critical_fail": "严重失误！球直接下网",
             "low": "回球质量不佳，对方机会来了",
             "normal": "稳健回击，保持节奏",
             "high": "漂亮的一球！很有威胁",
             "critical_success": "完美击球！无懈可击！"
         }
-        return quality_desc.get(result['quality'], f"{skill}完成")
+        base_desc = quality_base.get(result['quality'], f"{skill}完成")
+        
+        # 如果有玩家输入，尝试结合
+        if player_message.strip():
+            if result['quality'] in ['high', 'critical_success']:
+                return f"{player_message}！{base_desc}"
+            else:
+                return f"想{player_message}，可惜{base_desc}"
+        
+        return base_desc
 
 
 # WebSocket连接管理
@@ -493,8 +522,8 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
         base_roll = random.randint(1, 20)
         result = calculate_shot_result(base_roll, skill_level, low_quality_bonus)
         
-        # 生成AI描述
-        description = await generate_ai_description(skill, result, room.game_state)
+        # 生成AI描述（结合玩家输入的对话）
+        description = await generate_ai_description(skill, result, room.game_state, message)
         
         # 判断是否得分
         scored = False
@@ -524,7 +553,8 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
             "result": result,
             "description": description,
             "scored": scored,
-            "scorer": scorer
+            "scorer": scorer,
+            "game_state": room.game_state  # 每次击球都发送更新后的状态
         }
         
         # 如果得分，更新比分
@@ -542,8 +572,6 @@ async def handle_game_action(room: GameRoom, username: str, data: dict, is_spect
             room.game_state["last_shot_value"] = None
             room.game_state["last_player"] = None
             room.game_state["current_team"] = scorer_team  # 得分方发球
-            
-            shot_info["game_state"] = room.game_state
             
             # 检查是否游戏结束（21分制，赛点时需领先2分）
             score_a = room.game_state["score_a"]
